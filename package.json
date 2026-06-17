@@ -1,0 +1,13 @@
+{
+  "name": "guardlink-backend",
+  "version": "1.0.0",
+  "description": "Real-time backend service for GuardLink parental live sync",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "cors": "^2.8.5"
+  }
+}
