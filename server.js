@@ -1,57 +1,95 @@
 const express = require('express');
+const cors = require('cors');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Enable JSON parser for serializing GuardLink requests
+app.use(cors());
 app.use(express.json());
 
-// In-Memory database representing the current location/status of the child's phone
-let childDeviceStatus = {
-    deviceName: "Leo's Pixel 8 Pro",
-    battery: 100,
-    latitude: 37.7880,
-    longitude: -122.4100,
-    currentApp: "Idle",
-    activities: []
-};
+// In-memory databases for live tracking data and pending parent commands
+const deviceTelemetry = {};
+const pendingCommands = {};
 
-// 1. GuardLink Sync Endpoint
-app.post('/sync', (req, res) => {
-    const telemetry = req.body;
-    console.log("=== RECEIVED REAL-TIME TELEMETRY SYSTEM UPDATE ===");
-    console.log(`Device: ${telemetry.deviceName}`);
-    console.log(`Phone Battery: ${telemetry.battery}%`);
-    console.log(`GPS Location: https://maps.google.com/?q=${telemetry.latitude},${telemetry.longitude}`);
-    console.log(`Currently Using: ${telemetry.currentApp}`);
-    console.log(`Activity Logs Count: ${telemetry.activities.length}`);
-
-    // Store latest state locally on the server
-    childDeviceStatus = telemetry;
-
-    // Send back healthy status response and any optional commands to lock screen / take screenshot
-    res.json({
-        success: true,
-        message: "Telemetry secured in cloud panel.",
-        pendingCommands: [
-            // Example command sent down to target child device
-            // { commandType: "SIREN_ALARM", payload: "PLAY_ALERT" }
-        ]
+// Root / Health Check
+app.get('/', (req, res) => {
+    res.json({ 
+        status: "online", 
+        service: "GuardLink Live Sync Cloud Node",
+        message: "Use /dashboard to view tracked devices." 
     });
 });
 
-// 2. Parental Panel Landing Page
-app.get('/', (req, res) => {
-    res.send(`
-        <h1>GuardLink Parental Control Center Dashboard</h1>
-        <h3>Device Managed: ${childDeviceStatus.deviceName}</h3>
-        <p><b>Current Battery Level:</b> ${childDeviceStatus.battery}%</p>
-        <p><b>Live Position coordinates:</b> Lat ${childDeviceStatus.latitude} / Lng ${childDeviceStatus.longitude}</p>
-        <p><b>Active App in Hand:</b> ${childDeviceStatus.currentApp}</p>
-        <h4>Recent Encrypted Endpoint Activities Logs:</h4>
-        <pre>${JSON.stringify(childDeviceStatus.activities, null, 2)}</pre>
-    `);
+// 1. Telemetry and Logs Sync Endpoint (POST /sync)
+// Android child app periodically POSTs coordinates, battery, and logs here.
+app.post('/sync', (req, res) => {
+    const { deviceName, battery, latitude, longitude, currentApp, activities } = req.body;
+    
+    if (!deviceName) {
+        return res.status(400).json({ success: false, message: "Missing deviceName" });
+    }
+
+    console.log(`[SYNC RECEIVED] Device: '${deviceName}' | Battery: ${battery}%`);
+    console.log(`Location: Lat ${latitude}, Lng ${longitude} | Active App: ${currentApp}`);
+    console.log(`Syncing ${activities ? activities.length : 0} detailed activity records.`);
+
+    // Store latest state
+    deviceTelemetry[deviceName] = {
+        battery,
+        latitude,
+        longitude,
+        currentApp,
+        activities: activities || [],
+        lastSeen: new Date().toISOString()
+    };
+
+    // Retrieve pending commands for this child device
+    const commands = pendingCommands[deviceName] || [];
+    pendingCommands[deviceName] = []; // Reset commands queue once consumed
+
+    res.json({
+        success: true,
+        message: "Cloud database synchronized successfully.",
+        pendingCommands: commands
+    });
 });
 
-app.listen(PORT, () => {
-    console.log(`GuardLink Server is online on port ${PORT}`);
+// 2. Fetch Pending Commands Endpoint (GET /commands)
+app.get('/commands', (req, res) => {
+    const deviceName = req.query.deviceName;
+    if (!deviceName) {
+        return res.status(400).json({ error: "Missing 'deviceName' query parameter" });
+    }
+
+    const commands = pendingCommands[deviceName] || [];
+    pendingCommands[deviceName] = []; // Clear queue on retrieval
+    res.json(commands);
+});
+
+// 3. Queue Live Parental Commands (POST /command)
+// Call this from Postman or your web browser to trigger immediate actions on the child mobile!
+// Example payload: { "deviceName": "Leo's Pixel 8 Pro", "commandType": "SIREN", "payload": "play" }
+app.post('/command', (req, res) => {
+    const { deviceName, commandType, payload } = req.body;
+    if (!deviceName || !commandType) {
+        return res.status(400).json({ success: false, message: "Missing deviceName or commandType" });
+    }
+
+    if (!pendingCommands[deviceName]) {
+        pendingCommands[deviceName] = [];
+    }
+
+    pendingCommands[deviceName].push({ commandType, payload: payload || "" });
+    console.log(`[COMMAND ENQUEUED] ${commandType} for target device [${deviceName}]`);
+
+    res.json({ success: true, message: `Command '${commandType}' successfully put on standby queue.` });
+});
+
+// 4. Parental Dashboard API (GET /dashboard)
+// Access this url in your web container/mobile browser to inspect live tracked devices in real-time
+app.get('/dashboard', (req, res) => {
+    res.json(deviceTelemetry);
+});
+
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`GuardLink Cloud Server listening on port ${PORT}`);
 });
