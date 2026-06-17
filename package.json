@@ -1,7 +1,7 @@
 {
   "name": "guardlink-backend",
   "version": "1.0.0",
-  "description": "Real-time backend service for GuardLink parental live sync",
+  "description": "Real-time Node.js Backend & Parental Web Dashboard for GuardLink",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
@@ -9,5 +9,9 @@
   "dependencies": {
     "express": "^4.19.2",
     "cors": "^2.8.5"
-  }
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "private": true
 }
